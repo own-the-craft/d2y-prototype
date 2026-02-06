@@ -1,0 +1,230 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  CONSUMER
+  MERCHANT
+  ADMIN
+  SUPPORT
+}
+
+enum SlotType {
+  DELIVERY
+  CNC
+}
+
+enum OrderStatus {
+  PLACED
+  PAID
+  ACCEPTED
+  PACKING
+  READY_FOR_PICKUP
+  CANCELLED
+  REFUNDED
+}
+
+enum PaymentStatus {
+  UNPAID
+  PAID
+  REFUNDED
+}
+
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+model User {
+  id           String   @id @default(cuid()) @map("id")
+  email        String   @unique @map("email")
+  passwordHash String   @map("password_hash")
+  role         Role     @map("role")
+  name         String   @map("name")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  consumerOrders Order[]        @relation("consumer_orders")
+  merchantStaff  MerchantStaff[]
+  orderEvents    OrderEvent[]   @relation("order_event_actor")
+  refundsCreated Refund[]       @relation("refund_created_by")
+  tickets        Ticket[]       @relation("ticket_consumer")
+  auditLogs      AuditLog[]     @relation("audit_actor")
+
+  @@map("users")
+}
+
+model Merchant {
+  id               String   @id @default(cuid()) @map("id")
+  name             String   @map("name")
+  addressJson      Json     @map("address_json")
+  openingHoursJson Json?    @map("opening_hours_json")
+  active           Boolean  @default(true) @map("active")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  staff    MerchantStaff[]
+  products Product[]
+  orders   Order[]
+
+  @@map("merchants")
+}
+
+model MerchantStaff {
+  userId     String   @map("user_id")
+  merchantId String   @map("merchant_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  merchant Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+
+  @@id([userId, merchantId])
+  @@index([merchantId])
+  @@map("merchant_staff")
+}
+
+model Product {
+  id          String   @id @default(cuid()) @map("id")
+  merchantId  String   @map("merchant_id")
+  name        String   @map("name")
+  description String?  @map("description")
+  priceCents  Int      @map("price_cents")
+  imageUrl    String?  @map("image_url")
+  inStockBool Boolean  @default(true) @map("in_stock_bool")
+  sku         String?  @map("sku")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  merchant   Merchant   @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  orderItems OrderItem[]
+
+  @@index([merchantId])
+  @@map("products")
+}
+
+model Slot {
+  id        String   @id @default(cuid()) @map("id")
+  date      String   @map("date") // YYYY-MM-DD (Europe/Amsterdam)
+  type      SlotType @map("type")
+  startTime String   @map("start_time") // HH:mm
+  endTime   String   @map("end_time")   // HH:mm
+  capacity  Int      @map("capacity")
+  remaining Int      @map("remaining")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  orders Order[]
+
+  @@index([date, type])
+  @@map("slots")
+}
+
+model Order {
+  id             String        @id @default(cuid()) @map("id")
+  orderCode      String        @unique @map("order_code")
+  consumerId     String        @map("consumer_id")
+  merchantId     String        @map("merchant_id")
+  slotId         String        @map("slot_id")
+  status         OrderStatus   @default(PLACED) @map("status")
+  paymentStatus  PaymentStatus @default(UNPAID) @map("payment_status")
+  totalsJson     Json          @map("totals_json")
+  addressJson    Json          @map("address_json")
+  instructions   String?       @map("instructions")
+  idempotencyKey String?       @map("idempotency_key")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  updatedAt      DateTime      @updatedAt @map("updated_at")
+
+  consumer User     @relation("consumer_orders", fields: [consumerId], references: [id])
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+  slot     Slot     @relation(fields: [slotId], references: [id])
+
+  items   OrderItem[]
+  events  OrderEvent[]
+  tickets Ticket[]
+  refunds Refund[]
+
+  @@unique([consumerId, idempotencyKey])
+  @@index([merchantId, createdAt])
+  @@index([consumerId, createdAt])
+  @@index([status, createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id             String @id @default(cuid()) @map("id")
+  orderId        String @map("order_id")
+  productId      String @map("product_id")
+  nameSnapshot   String @map("name_snapshot")
+  unitPriceCents Int    @map("unit_price_cents")
+  qty            Int    @map("qty")
+
+  order   Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model OrderEvent {
+  id          String   @id @default(cuid()) @map("id")
+  orderId     String   @map("order_id")
+  type        String   @map("type")
+  payloadJson Json     @map("payload_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+  actorUserId String?  @map("actor_user_id")
+
+  order Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  actor User? @relation("order_event_actor", fields: [actorUserId], references: [id])
+
+  @@index([orderId, createdAt])
+  @@map("order_events")
+}
+
+model Ticket {
+  id         String       @id @default(cuid()) @map("id")
+  orderId    String?      @map("order_id")
+  consumerId String       @map("consumer_id")
+  subject    String       @map("subject")
+  message    String       @map("message")
+  status     TicketStatus @default(OPEN) @map("status")
+  createdAt  DateTime     @default(now()) @map("created_at")
+  updatedAt  DateTime     @updatedAt @map("updated_at")
+
+  order    Order? @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  consumer User   @relation("ticket_consumer", fields: [consumerId], references: [id])
+
+  @@index([status, createdAt])
+  @@map("tickets")
+}
+
+model Refund {
+  id          String   @id @default(cuid()) @map("id")
+  orderId     String   @map("order_id")
+  amountCents Int      @map("amount_cents")
+  reason      String?  @map("reason")
+  createdBy   String   @map("created_by")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  order   Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  creator User  @relation("refund_created_by", fields: [createdBy], references: [id])
+
+  @@index([orderId, createdAt])
+  @@map("refunds")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid()) @map("id")
+  actorUserId String?  @map("actor_user_id")
+  action      String   @map("action")
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  metaJson    Json?    @map("meta_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  actor User? @relation("audit_actor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([entityType, entityId, createdAt])
+  @@map("audit_log")
+}
