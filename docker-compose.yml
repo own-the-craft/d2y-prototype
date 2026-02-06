@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: d2y
+      POSTGRES_PASSWORD: d2y
+      POSTGRES_DB: d2y
+    ports:
+      - "5432:5432"
+    volumes:
+      - d2y_db:/var/lib/postgresql/data
+volumes:
+  d2y_db:
