@@ -6,7 +6,8 @@ import { AuthModule } from "./auth/auth.module";
 import { RealtimeModule } from "./realtime/realtime.module";
 import { CatalogModule } from "./catalog/catalog.module";
 import { SlotsModule } from "./slots/slots.module";
-import { RolesGuard } from "./common/guards/roles.guard";
+import { OrdersModule } from "./orders/orders.module";
+import { TicketsModule } from "./tickets/tickets.module";
 
 @Module({
   imports: [
@@ -16,8 +17,9 @@ import { RolesGuard } from "./common/guards/roles.guard";
     RealtimeModule,
     CatalogModule,
     SlotsModule,
+    OrdersModule,
+    TicketsModule,
   ],
   controllers: [AppController],
-  providers: [RolesGuard],
 })
 export class AppModule {}
